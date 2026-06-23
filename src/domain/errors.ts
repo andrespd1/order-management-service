@@ -14,3 +14,6 @@ export class NoFulfillableWarehouseError extends DomainError {}
 
 // The payment provider declined the charge.
 export class PaymentDeclinedError extends DomainError {}
+
+// A request that failed validation at the boundary.
+export class ValidationError extends DomainError {}

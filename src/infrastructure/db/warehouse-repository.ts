@@ -1,4 +1,4 @@
-import { prisma } from "./client.js";
+import type { PrismaClient } from "@prisma/client";
 import type {
   RequestedItem,
   WarehouseLocation,
@@ -6,12 +6,14 @@ import type {
 } from "../../application/ports/warehouse-repository.js";
 
 export class PrismaWarehouseRepository implements WarehouseRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
   async findWarehousesStockingAll(items: RequestedItem[]): Promise<WarehouseLocation[]> {
     if (items.length === 0) return [];
 
     // One query: inventory rows where some requested product is stocked in sufficient
     // quantity, each carrying its warehouse's location (no second round-trip).
-    const rows = await prisma.inventory.findMany({
+    const rows = await this.prisma.inventory.findMany({
       where: { OR: items.map((i) => ({ productId: i.productId, quantity: { gte: i.quantity } })) },
       select: { warehouse: { select: { id: true, latitude: true, longitude: true } } },
     });

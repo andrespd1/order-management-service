@@ -1,5 +1,4 @@
-import type { Prisma } from "@prisma/client";
-import { prisma } from "./client.js";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
   Order,
   OrderRepository,
@@ -13,13 +12,15 @@ type OrderWithItems = Prisma.OrderGetPayload<{ include: { items: true } }>;
 class ReservationRace extends Error {}
 
 export class PrismaOrderRepository implements OrderRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
   async reserveAndCreate(input: ReserveOrderInput): Promise<Order | null> {
     // Decrement in a deterministic order (by productId) so concurrent orders touching the
     // same SKUs always lock rows in the same order and can't deadlock each other.
     const lines = [...input.lines].sort((a, b) => a.productId.localeCompare(b.productId));
 
     try {
-      const order = await prisma.$transaction(async (tx) => {
+      const order = await this.prisma.$transaction(async (tx) => {
         for (const line of lines) {
           // Optimistic conditional decrement.
           const { count } = await tx.inventory.updateMany({
@@ -64,7 +65,7 @@ export class PrismaOrderRepository implements OrderRepository {
   }
 
   async markPaid(orderId: string, transactionId: string): Promise<Order> {
-    const order = await prisma.order.update({
+    const order = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: "PAID", paymentTransactionId: transactionId },
       include: { items: true },
@@ -73,7 +74,7 @@ export class PrismaOrderRepository implements OrderRepository {
   }
 
   async releaseReservation(orderId: string): Promise<void> {
-    await prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: { items: true },
