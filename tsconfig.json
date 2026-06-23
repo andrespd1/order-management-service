@@ -4,8 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
-    "outDir": "dist",
-    "rootDir": "src",
+    "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
@@ -13,7 +12,8 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "sourceMap": true,
-    "declaration": false
+    "declaration": false,
+    "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "prisma"]
 }
