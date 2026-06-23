@@ -1,0 +1,125 @@
+// Data model (see PRD.md §4). snake_case columns; money in integer cents.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PAYMENT_FAILED
+  CANCELLED
+
+  @@map("order_status")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  inventory Inventory[]
+  orders    Order[]
+
+  @@map("warehouses")
+}
+
+model Product {
+  id        String   @id @default(uuid()) @db.Uuid
+  sku       String   @unique
+  name      String
+  price     Int // cents
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  inventory  Inventory[]
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model Inventory {
+  warehouseId String @map("warehouse_id") @db.Uuid
+  productId   String @map("product_id") @db.Uuid
+  quantity    Int // CHECK (>= 0) added in the migration
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@id([warehouseId, productId])
+  @@index([productId])
+  @@map("inventory")
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  email     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  orders Order[]
+
+  @@map("customers")
+}
+
+model Order {
+  id                   String      @id @default(uuid()) @db.Uuid
+  customerId           String      @map("customer_id") @db.Uuid
+  warehouseId          String      @map("warehouse_id") @db.Uuid
+  status               OrderStatus @default(PENDING)
+  shipLine1            String      @map("ship_line1")
+  shipCity             String      @map("ship_city")
+  shipRegion           String?     @map("ship_region")
+  shipPostalCode       String?     @map("ship_postal_code")
+  shipCountry          String      @map("ship_country")
+  shipLatitude         Float       @map("ship_latitude")
+  shipLongitude        Float       @map("ship_longitude")
+  totalAmount          Int         @map("total_amount")
+  currency             String      @default("USD")
+  paymentTransactionId String?     @map("payment_transaction_id")
+  idempotencyKey       String?     @unique @map("idempotency_key") // one order per key
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  customer  Customer    @relation(fields: [customerId], references: [id])
+  warehouse Warehouse   @relation(fields: [warehouseId], references: [id])
+  items     OrderItem[]
+
+  @@index([customerId]) // FKs aren't auto-indexed in Postgres
+  @@index([warehouseId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String @id @default(uuid()) @db.Uuid
+  orderId   String @map("order_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  quantity  Int // CHECK (> 0) added in the migration
+  unitPrice Int    @map("unit_price") // snapshot at order time
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model IdempotencyKey {
+  key                String   @id
+  requestFingerprint String   @map("request_fingerprint") // hash(route+body); detects key reuse with a different payload
+  responseStatus     Int?     @map("response_status")
+  responseBody       Json?    @map("response_body")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@map("idempotency_keys")
+}

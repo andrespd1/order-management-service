@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: canals_orders_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-canals}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-canals}
+      POSTGRES_DB: ${POSTGRES_DB:-canals_orders}
+    ports:
+      # host 5433 -> container 5432 (avoid clashing with a local Postgres)
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-canals} -d ${POSTGRES_DB:-canals_orders}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Full-stack spin-up. For local iteration we run only `docker compose up -d postgres`
+  # plus `npm run dev` on the host, so this stays out of the dev inner loop.
+  api:
+    build: .
+    container_name: canals_orders_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # On the compose network the DB is "postgres:5432", not host localhost:5433.
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-canals}:${POSTGRES_PASSWORD:-canals}@postgres:5432/${POSTGRES_DB:-canals_orders}?schema=public"
+      PORT: "3000"
+      HOST: "0.0.0.0"
+    ports:
+      - "${API_PORT:-3000}:3000"
+
+volumes:
+  pgdata:
