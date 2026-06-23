@@ -1,5 +1,4 @@
-// Ports the application depends on; adapters in infrastructure/ implement them.
-
+// Outbound port for charging payments. Adapter lives in infrastructure/payment.
 export interface ChargeInput {
   cardNumber: string;
   amount: number; // minor units (cents)

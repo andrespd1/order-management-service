@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ChargeInput, ChargeOutcome, PaymentGateway } from "../../application/ports.js";
+import type { ChargeInput, ChargeOutcome, PaymentGateway } from "../../application/ports/payment-gateway.js";
 
 // Mock gateway. Approves by default; a card number ending in "0002" is declined, so the
 // compensation path is exercisable. With an idempotency key the transaction id is derived
