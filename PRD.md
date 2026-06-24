@@ -85,15 +85,15 @@ failure handling, and clean data storage.
 }
 ```
 
-**Error responses** (problem-style JSON: `{ "error": { "code", "message", "details" } }`)
+**Error responses** (problem-style JSON: `{ "error": { "code", "message" } }`)
 
 | Status | When |
 |--------|------|
 | `400 Bad Request` | Malformed body, lone coordinate (lat/lng must be paired), unknown product or customer, non-positive quantity |
 | `402 Payment Required` | Payment API declined the charge |
-| `409 Conflict` | No single warehouse can fill the whole order (insufficient stock) |
+| `409 Conflict` | No single warehouse can fill the whole order, or the same Idempotency-Key is still in progress |
+| `422 Unprocessable Entity` | Idempotency-Key reused with a different payload |
 | `500` | Unexpected server error |
-| `503 Service Unavailable` | Payment provider unreachable after retries |
 
 > Money is stored/sent as **integer minor units** (cents), never floats. Products carry a
 > `price` so the **server** computes the charge amount; the client is never trusted for money
@@ -174,16 +174,17 @@ failure:
 
 1. Validate the body (shipping coordinates optional, but lat/lng must be sent as a pair).
 2. Idempotency: if the `Idempotency-Key` was already seen, return the stored response.
-3. Load products and prices; compute the line items and total amount.
-4. Resolve the destination coordinates (client-supplied, or geocode the address when omitted),
+3. Verify the customer exists; unknown → `400` (rejected before any stock is reserved).
+4. Load products and prices; compute the line items and total amount.
+5. Resolve the destination coordinates (client-supplied, or geocode the address when omitted),
    then select a warehouse: candidates stock every item in sufficient quantity; pick the one
    nearest those coordinates (Haversine). None → `409`.
-5. In one transaction: atomically decrement the chosen warehouse's stock for each item and
+6. In one transaction: atomically decrement the chosen warehouse's stock for each item and
    create the order as `PENDING`. A decrement that loses the race rolls the whole
    transaction back (retry selection once, else `409`). No external I/O inside the transaction.
-6. Charge the payment API **outside** the transaction. Success → `PAID`. Decline → restore
+7. Charge the payment API **outside** the transaction. Success → `PAID`. Decline → restore
    the reserved stock and mark `PAYMENT_FAILED` (`402`).
-7. Store the idempotency response and return `201`.
+8. Store the idempotency response and return `201`.
 
 ```mermaid
 sequenceDiagram
@@ -200,6 +201,7 @@ sequenceDiagram
         DB-->>API: Stored response
         API-->>C: Replay saved response (no re-charge)
     else New request
+        API->>DB: Verify customer exists (unknown -> 400)
         API->>DB: Load products and prices, compute total
         API->>API: Resolve coordinates (client's, else geocode the address)
         API->>DB: Find warehouses with ALL items in stock
@@ -317,7 +319,7 @@ have only an address.
 | DB | Postgres 16 (docker-compose) | Real transactions + row locking — needed for §6.1 |
 | DB access | Prisma + Prisma Migrate | Schema-first & readable; handles the atomic decrement via `updateMany`. `FOR UPDATE` (not needed here) would use `$queryRaw` |
 | Validation | Fastify JSON Schema (Ajv) | body validation + lat/lng pairing live here |
-| Config | env vars (dotenv) | |
+| Config | env vars (`process.env`) | |
 | Logging | pino (Fastify default) | structured logs |
 | Container | docker-compose for Postgres | one-command local bring-up |
 
@@ -327,23 +329,24 @@ have only an address.
 
 ```
 src/
-  domain/             # entities, value objects, domain errors (no I/O)
-    order.ts
+  domain/              # value objects + domain errors (no I/O)
+    address.ts
+    distance.ts
     errors.ts
   application/         # use-cases orchestrating domain + ports
     create-order.ts
-    ports.ts          # PaymentGateway, repositories (interfaces)
-  infrastructure/
-    db/
-      client.ts        # Prisma client
-      order-repository.ts
-      inventory-repository.ts
-    payment/
-      mock-payment-gateway.ts
+    select-warehouse.ts
+    ports/             # interfaces: payment, geocoder, repositories, idempotency
+  infrastructure/      # adapters implementing the ports
+    db/                # Prisma client + repositories + idempotency store
+    payment/mock-payment-gateway.ts
+    geocoding/mock-geocoder.ts
   http/
     server.ts
     routes/orders.ts
+    controllers/order-controller.ts
     error-mapper.ts    # domain error -> HTTP status
+  composition-root.ts  # wires adapters -> use-cases -> controllers
   config.ts
 prisma/
   schema.prisma        # data model + migrations source of truth
