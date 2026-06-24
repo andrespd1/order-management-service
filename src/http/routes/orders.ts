@@ -47,10 +47,72 @@ const bodySchema = {
   },
 } as const;
 
+const orderResponse = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    status: { type: "string", enum: ["PENDING", "PAID", "PAYMENT_FAILED", "CANCELLED"] },
+    customerId: { type: "string" },
+    warehouseId: { type: "string" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          productId: { type: "string" },
+          quantity: { type: "integer" },
+          unitPrice: { type: "integer" },
+        },
+      },
+    },
+    totalAmount: { type: "integer" },
+    currency: { type: "string" },
+    paymentTransactionId: { type: ["string", "null"] },
+    createdAt: { type: "string", format: "date-time" },
+  },
+} as const;
+
+const errorResponse = {
+  type: "object",
+  properties: {
+    error: {
+      type: "object",
+      properties: {
+        code: { type: "string" },
+        message: { type: "string" },
+      },
+    },
+  },
+} as const;
+
 export function registerOrderRoutes(app: FastifyInstance, controller: OrderController): void {
   app.post(
     "/orders",
-    { schema: { summary: "Create an order", tags: ["orders"], body: bodySchema } },
+    {
+      schema: {
+        summary: "Create an order",
+        description:
+          "Reserves stock at the nearest warehouse that can fill the whole order, charges the " +
+          "(mocked) payment, and persists the order. Supply an Idempotency-Key header to make the " +
+          "call safe to retry.",
+        tags: ["orders"],
+        headers: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            "idempotency-key": { type: "string", description: "Client-supplied key; retries replay the original response." },
+          },
+        },
+        body: bodySchema,
+        response: {
+          201: orderResponse,
+          400: errorResponse, // invalid body, dup/unknown product, missing coords
+          402: errorResponse, // payment declined
+          409: errorResponse, // no single warehouse can fulfil
+          422: errorResponse, // Idempotency-Key reused with a different payload
+        },
+      },
+    },
     (request, reply) => controller.create(request, reply),
   );
 }
