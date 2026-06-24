@@ -11,6 +11,7 @@ Stack: **TypeScript · Fastify · Postgres · Prisma**. Design rationale lives i
 Requires Node ≥ 22 and Docker.
 
 ```bash
+cp .env.example .env            # DATABASE_URL, ports (Prisma reads .env)
 docker compose up -d postgres   # Postgres on host port 5433
 npm install
 npx prisma migrate dev          # apply the schema

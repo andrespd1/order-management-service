@@ -1,9 +1,11 @@
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
 import type { OrderController } from "./controllers/order-controller.js";
 import { registerOrderRoutes } from "./routes/orders.js";
 import { mapError } from "./error-mapper.js";
+import { config } from "../config.js";
 
 // The controllers the server wires to routes; built by the composition root.
 export interface Controllers {
@@ -14,6 +16,9 @@ export interface Controllers {
 // wired with in-memory adapters and drive real HTTP via app.inject().
 export async function buildServer(controllers: Controllers): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
+
+  // CORS first, so it also covers /docs and preflight for the Idempotency-Key header.
+  await app.register(fastifyCors, { origin: config.corsOrigin });
 
   // Register OpenAPI before the routes so it collects their schemas; UI served at /docs.
   await app.register(fastifySwagger, {

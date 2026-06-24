@@ -111,4 +111,22 @@ describe("POST /orders", () => {
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe("IDEMPOTENCY_KEY_REUSED");
   });
+
+  it("answers a cross-origin preflight, allowing the Idempotency-Key header", async () => {
+    await setup();
+    const res = await app.inject({
+      method: "OPTIONS",
+      url: "/orders",
+      headers: {
+        origin: "https://example.com",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type,idempotency-key",
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.headers["access-control-allow-origin"]).toBe("https://example.com");
+    expect(String(res.headers["access-control-allow-headers"]).toLowerCase()).toContain(
+      "idempotency-key",
+    );
+  });
 });
