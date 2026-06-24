@@ -48,5 +48,9 @@ const bodySchema = {
 } as const;
 
 export function registerOrderRoutes(app: FastifyInstance, controller: OrderController): void {
-  app.post("/orders", { schema: { body: bodySchema } }, (request, reply) => controller.create(request, reply));
+  app.post(
+    "/orders",
+    { schema: { summary: "Create an order", tags: ["orders"], body: bodySchema } },
+    (request, reply) => controller.create(request, reply),
+  );
 }

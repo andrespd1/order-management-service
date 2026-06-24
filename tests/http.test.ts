@@ -25,7 +25,7 @@ let orders: FakeOrderRepository;
 
 afterEach(() => app.close());
 
-function setup(opts: { approve?: boolean } = {}): void {
+async function setup(opts: { approve?: boolean } = {}): Promise<void> {
   orders = new FakeOrderRepository();
   const useCase = new CreateOrder({
     products: new FakeProductRepository({ [MOUSE]: 1999 }),
@@ -33,26 +33,26 @@ function setup(opts: { approve?: boolean } = {}): void {
     orders,
     payments: new FakePaymentGateway(opts.approve ?? true),
   });
-  app = buildServer({ orders: new OrderController(useCase, new FakeIdempotencyStore()) });
+  app = await buildServer({ orders: new OrderController(useCase, new FakeIdempotencyStore()) });
 }
 
 describe("POST /orders", () => {
   it("201 with a PAID order for a valid request", async () => {
-    setup();
+    await setup();
     const res = await app.inject({ method: "POST", url: "/orders", payload: validBody });
     expect(res.statusCode).toBe(201);
     expect(res.json().status).toBe("PAID");
   });
 
   it("402 when payment is declined", async () => {
-    setup({ approve: false });
+    await setup({ approve: false });
     const res = await app.inject({ method: "POST", url: "/orders", payload: validBody });
     expect(res.statusCode).toBe(402);
     expect(res.json().error.code).toBe("PAYMENT_DECLINED");
   });
 
   it("400 when shipping coordinates are missing", async () => {
-    setup();
+    await setup();
     const res = await app.inject({
       method: "POST",
       url: "/orders",
@@ -62,7 +62,7 @@ describe("POST /orders", () => {
   });
 
   it("replays the same response for a repeated Idempotency-Key, running the use-case once", async () => {
-    setup();
+    await setup();
     const headers = { "idempotency-key": "key-1" };
     const first = await app.inject({ method: "POST", url: "/orders", payload: validBody, headers });
     const second = await app.inject({ method: "POST", url: "/orders", payload: validBody, headers });
@@ -72,7 +72,7 @@ describe("POST /orders", () => {
   });
 
   it("422 when the same Idempotency-Key is reused with a different body", async () => {
-    setup();
+    await setup();
     const headers = { "idempotency-key": "key-2" };
     await app.inject({ method: "POST", url: "/orders", payload: validBody, headers });
     const res = await app.inject({
