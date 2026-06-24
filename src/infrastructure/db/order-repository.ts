@@ -46,6 +46,7 @@ export class PrismaOrderRepository implements OrderRepository {
             shipLatitude: input.shippingAddress.latitude,
             shipLongitude: input.shippingAddress.longitude,
             totalAmount: input.totalAmount,
+            idempotencyKey: input.idempotencyKey ?? null,
             items: {
               create: lines.map((l) => ({
                 productId: l.productId,

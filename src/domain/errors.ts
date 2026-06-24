@@ -17,3 +17,9 @@ export class PaymentDeclinedError extends DomainError {}
 
 // A request that failed validation at the boundary.
 export class ValidationError extends DomainError {}
+
+// An Idempotency-Key was reused with a different request payload.
+export class IdempotencyKeyMismatchError extends DomainError {}
+
+// A request with the same Idempotency-Key is still being processed.
+export class IdempotencyConflictError extends DomainError {}

@@ -2,6 +2,7 @@ import { prisma } from "./infrastructure/db/client.js";
 import { PrismaProductRepository } from "./infrastructure/db/product-repository.js";
 import { PrismaWarehouseRepository } from "./infrastructure/db/warehouse-repository.js";
 import { PrismaOrderRepository } from "./infrastructure/db/order-repository.js";
+import { PrismaIdempotencyStore } from "./infrastructure/db/idempotency-store.js";
 import { MockPaymentGateway } from "./infrastructure/payment/mock-payment-gateway.js";
 import { CreateOrder } from "./application/create-order.js";
 import { OrderController } from "./http/controllers/order-controller.js";
@@ -18,6 +19,6 @@ export function buildControllers(): Controllers {
   });
 
   return {
-    orders: new OrderController(createOrder),
+    orders: new OrderController(createOrder, new PrismaIdempotencyStore(prisma)),
   };
 }

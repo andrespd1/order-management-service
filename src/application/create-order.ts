@@ -62,6 +62,7 @@ export class CreateOrder {
         shippingAddress: command.shippingAddress,
         lines,
         totalAmount,
+        idempotencyKey: command.idempotencyKey,
       });
     }
     if (!order) throw new NoFulfillableWarehouseError("No single warehouse can fulfil this order");

@@ -1,5 +1,7 @@
 import type { FastifyError } from "fastify";
 import {
+  IdempotencyConflictError,
+  IdempotencyKeyMismatchError,
   NoFulfillableWarehouseError,
   PaymentDeclinedError,
   ProductNotFoundError,
@@ -20,6 +22,12 @@ export function mapError(error: FastifyError): { status: number; code: string; m
   }
   if (error instanceof PaymentDeclinedError) {
     return { status: 402, code: "PAYMENT_DECLINED", message: error.message };
+  }
+  if (error instanceof IdempotencyKeyMismatchError) {
+    return { status: 422, code: "IDEMPOTENCY_KEY_REUSED", message: error.message };
+  }
+  if (error instanceof IdempotencyConflictError) {
+    return { status: 409, code: "IDEMPOTENCY_IN_PROGRESS", message: error.message };
   }
   return { status: 500, code: "INTERNAL_ERROR", message: "Internal server error" };
 }

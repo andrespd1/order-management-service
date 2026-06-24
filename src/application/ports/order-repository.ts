@@ -24,6 +24,7 @@ export interface ReserveOrderInput {
   shippingAddress: ShippingAddress;
   lines: OrderLine[];
   totalAmount: number;
+  idempotencyKey?: string; // DB-level backstop: one order per key (unique column)
 }
 
 export type OrderStatus = "PENDING" | "PAID" | "PAYMENT_FAILED" | "CANCELLED";
