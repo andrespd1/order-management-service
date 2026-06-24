@@ -1,4 +1,6 @@
+import type { GeoPoint } from "../src/domain/distance.js";
 import type { CustomerRepository } from "../src/application/ports/customer-repository.js";
+import type { Geocoder, PostalAddress } from "../src/application/ports/geocoder.js";
 import type { ProductPrice, ProductRepository } from "../src/application/ports/product-repository.js";
 import type {
   RequestedItem,
@@ -12,6 +14,15 @@ import type {
 } from "../src/application/ports/order-repository.js";
 import type { ChargeInput, ChargeOutcome, PaymentGateway } from "../src/application/ports/payment-gateway.js";
 import type { IdempotencyOutcome, IdempotencyStore } from "../src/application/ports/idempotency-store.js";
+
+export class FakeGeocoder implements Geocoder {
+  readonly calls: PostalAddress[] = [];
+  constructor(private readonly point: GeoPoint = { latitude: 0, longitude: 0 }) {}
+  geocode(address: PostalAddress): Promise<GeoPoint> {
+    this.calls.push(address);
+    return Promise.resolve(this.point);
+  }
+}
 
 export class FakeCustomerRepository implements CustomerRepository {
   // Defaults to "every customer exists"; pass a set of ids to restrict (e.g. to test 404s).

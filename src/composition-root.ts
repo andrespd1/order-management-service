@@ -5,6 +5,7 @@ import { PrismaWarehouseRepository } from "./infrastructure/db/warehouse-reposit
 import { PrismaOrderRepository } from "./infrastructure/db/order-repository.js";
 import { PrismaIdempotencyStore } from "./infrastructure/db/idempotency-store.js";
 import { MockPaymentGateway } from "./infrastructure/payment/mock-payment-gateway.js";
+import { MockGeocoder } from "./infrastructure/geocoding/mock-geocoder.js";
 import { CreateOrder } from "./application/create-order.js";
 import { OrderController } from "./http/controllers/order-controller.js";
 import type { Controllers } from "./http/server.js";
@@ -18,6 +19,7 @@ export function buildControllers(): Controllers {
     warehouses: new PrismaWarehouseRepository(prisma),
     orders: new PrismaOrderRepository(prisma),
     payments: new MockPaymentGateway(),
+    geocoder: new MockGeocoder(),
   });
 
   return {

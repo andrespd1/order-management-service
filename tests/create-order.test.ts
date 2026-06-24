@@ -8,6 +8,7 @@ import {
 } from "../src/domain/errors.js";
 import {
   FakeCustomerRepository,
+  FakeGeocoder,
   FakeOrderRepository,
   FakePaymentGateway,
   FakeProductRepository,
@@ -30,6 +31,7 @@ describe("CreateOrder use-case", () => {
   it("creates a PAID order on the happy path, total computed server-side", async () => {
     const orders = new FakeOrderRepository();
     const useCase = new CreateOrder({
+      geocoder: new FakeGeocoder(),
       customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
@@ -47,6 +49,7 @@ describe("CreateOrder use-case", () => {
   it("compensates (restores the reservation) when payment is declined", async () => {
     const orders = new FakeOrderRepository();
     const useCase = new CreateOrder({
+      geocoder: new FakeGeocoder(),
       customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
@@ -61,6 +64,7 @@ describe("CreateOrder use-case", () => {
   it("retries after losing a stock race, then succeeds", async () => {
     const orders = new FakeOrderRepository(1); // first reserve loses the race, second wins
     const useCase = new CreateOrder({
+      geocoder: new FakeGeocoder(),
       customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
@@ -76,6 +80,7 @@ describe("CreateOrder use-case", () => {
 
   it("throws NoFulfillableWarehouse when no warehouse can fill the order", async () => {
     const useCase = new CreateOrder({
+      geocoder: new FakeGeocoder(),
       customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([]),
@@ -88,6 +93,7 @@ describe("CreateOrder use-case", () => {
 
   it("throws ProductNotFound for an unknown product id", async () => {
     const useCase = new CreateOrder({
+      geocoder: new FakeGeocoder(),
       customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({}),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
@@ -101,6 +107,7 @@ describe("CreateOrder use-case", () => {
   it("rejects an unknown customer up front, before reserving or charging", async () => {
     const orders = new FakeOrderRepository();
     const useCase = new CreateOrder({
+      geocoder: new FakeGeocoder(),
       customers: new FakeCustomerRepository(new Set()), // knows no customers
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
@@ -110,5 +117,29 @@ describe("CreateOrder use-case", () => {
 
     await expect(useCase.execute(command())).rejects.toBeInstanceOf(CustomerNotFoundError);
     expect(orders.reserved).toEqual([]); // short-circuited: no stock reserved, nothing charged
+  });
+
+  it("geocodes the shipping address when coordinates are omitted", async () => {
+    const orders = new FakeOrderRepository();
+    const geocoder = new FakeGeocoder({ latitude: 6.25, longitude: -75.57 });
+    const useCase = new CreateOrder({
+      geocoder,
+      customers: new FakeCustomerRepository(),
+      products: new FakeProductRepository({ [MOUSE]: 1999 }),
+      warehouses: new FakeWarehouseRepository([WAREHOUSE]),
+      orders,
+      payments: new FakePaymentGateway(true),
+    });
+
+    const order = await useCase.execute({
+      customerId: "c1",
+      shippingAddress: { line1: "1 Main", city: "Medellín", country: "CO" }, // no coordinates
+      items: [{ productId: MOUSE, quantity: 1 }],
+      cardNumber: "4111111111111111",
+    });
+
+    expect(order.status).toBe("PAID");
+    expect(geocoder.calls).toHaveLength(1); // consulted because coordinates were absent
+    expect(orders.reserved[0]?.shippingAddress).toMatchObject({ latitude: 6.25, longitude: -75.57 });
   });
 });

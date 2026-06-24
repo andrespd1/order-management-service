@@ -7,6 +7,7 @@ import {
 import type { GeoPoint } from "../domain/distance.js";
 import { selectWarehouse } from "./select-warehouse.js";
 import type { CustomerRepository } from "./ports/customer-repository.js";
+import type { Geocoder, PostalAddress } from "./ports/geocoder.js";
 import type { PaymentGateway } from "./ports/payment-gateway.js";
 import type { ProductRepository } from "./ports/product-repository.js";
 import type { RequestedItem, WarehouseRepository } from "./ports/warehouse-repository.js";
@@ -17,9 +18,13 @@ import type {
   ShippingAddress,
 } from "./ports/order-repository.js";
 
+// Coordinates are optional on input: supplied by the client when available (most accurate),
+// otherwise resolved by the geocoder. Both-or-neither is enforced at the HTTP boundary.
+export interface ShippingAddressInput extends PostalAddress, Partial<GeoPoint> {}
+
 export interface CreateOrderCommand {
   customerId: string;
-  shippingAddress: ShippingAddress;
+  shippingAddress: ShippingAddressInput;
   items: RequestedItem[]; // distinct productIds, positive quantities (enforced at the boundary)
   cardNumber: string;
   idempotencyKey?: string;
@@ -31,6 +36,7 @@ export interface CreateOrderDeps {
   warehouses: WarehouseRepository;
   orders: OrderRepository;
   payments: PaymentGateway;
+  geocoder: Geocoder;
 }
 
 // Use-case interactor — deps injected once at the composition root.
@@ -38,7 +44,7 @@ export class CreateOrder {
   constructor(private readonly deps: CreateOrderDeps) {}
 
   async execute(command: CreateOrderCommand): Promise<Order> {
-    const { customers, products, warehouses, orders, payments } = this.deps;
+    const { customers, products, warehouses, orders, payments, geocoder } = this.deps;
 
     // 0. Reject unknown customers up front; otherwise the FK trips deep in the insert and
     //    surfaces as a 500 instead of a clean 4xx.
@@ -57,9 +63,17 @@ export class CreateOrder {
       return { productId: item.productId, quantity: item.quantity, unitPrice };
     });
     const totalAmount = lines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
-    const destination: GeoPoint = command.shippingAddress;
 
-    // 2. Reserve at the nearest fulfilling warehouse. On a lost stock race, re-select and
+    // 2. Resolve shipping coordinates: prefer client-supplied (most accurate — FE map-pin /
+    //    address validation); otherwise geocode the address (mock now, real provider via DI).
+    const { latitude, longitude, ...postal } = command.shippingAddress;
+    const destination: GeoPoint =
+      latitude !== undefined && longitude !== undefined
+        ? { latitude, longitude }
+        : await geocoder.geocode(postal);
+    const shippingAddress: ShippingAddress = { ...postal, ...destination };
+
+    // 3. Reserve at the nearest fulfilling warehouse. On a lost stock race, re-select and
     //    retry once (stock may have shifted); a genuine no-candidate isn't retried.
     let order: Order | null = null;
     for (let attempt = 0; attempt < 2 && !order; attempt++) {
@@ -68,7 +82,7 @@ export class CreateOrder {
       order = await orders.reserveAndCreate({
         customerId: command.customerId,
         warehouseId: warehouse.id,
-        shippingAddress: command.shippingAddress,
+        shippingAddress,
         lines,
         totalAmount,
         idempotencyKey: command.idempotencyKey,
@@ -76,7 +90,7 @@ export class CreateOrder {
     }
     if (!order) throw new NoFulfillableWarehouseError("No single warehouse can fulfil this order");
 
-    // 3. Charge outside the transaction, then confirm or compensate.
+    // 4. Charge outside the transaction, then confirm or compensate.
     const outcome = await payments.charge({
       cardNumber: command.cardNumber,
       amount: totalAmount,

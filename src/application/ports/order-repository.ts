@@ -2,15 +2,11 @@
 // The reserve/markPaid/release methods each run as one atomic DB transaction —
 // the use-case orchestrates them but never manages transactions itself.
 
-export interface ShippingAddress {
-  line1: string;
-  city: string;
-  region?: string;
-  postalCode?: string;
-  country: string;
-  latitude: number;
-  longitude: number;
-}
+import type { PostalAddress } from "../../domain/address.js";
+import type { GeoPoint } from "../../domain/distance.js";
+
+// A located address: the postal fields plus resolved coordinates.
+export interface ShippingAddress extends PostalAddress, GeoPoint {}
 
 export interface OrderLine {
   productId: string;

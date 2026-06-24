@@ -63,13 +63,13 @@ Request:
   "payment": { "cardNumber": "4111111111111111" }
 }
 ```
-Optional header `Idempotency-Key: <uuid>` makes the call safe to retry. Shipping coordinates are a
-required, client-provided input (see [`PRD.md`](./PRD.md) §6.6).
+Optional header `Idempotency-Key: <uuid>` makes the call safe to retry. Shipping `latitude`/`longitude`
+are **optional** (sent as a pair); when omitted, the server geocodes the address. See [`PRD.md`](./PRD.md) §6.6.
 
 | Status | When |
 |--------|------|
 | `201` | Order created and paid |
-| `400` | Invalid body (missing coords, dup/blank product, quantity < 1, unknown product or customer) |
+| `400` | Invalid body (lone coordinate, dup/blank product, quantity < 1, unknown product or customer) |
 | `402` | Payment declined |
 | `409` | No single warehouse can fill the order |
 | `422` | Idempotency-Key reused with a different payload |
@@ -106,6 +106,13 @@ curl -s -X POST localhost:3000/orders -H 'content-type: application/json' -H 'id
   "shippingAddress":{"line1":"1 Main","city":"Bogotá","country":"CO","latitude":4.711,"longitude":-74.0721},
   "items":[{"productId":"aaaaaaaa-0000-0000-0000-000000000003","quantity":1}],
   "payment":{"cardNumber":"4111111111111111"}}'
+
+# No coordinates → server geocodes "Medellín" and fills from the Medellín DC
+curl -s -X POST localhost:3000/orders -H 'content-type: application/json' -d '{
+  "customerId":"cccccccc-0000-0000-0000-000000000001",
+  "shippingAddress":{"line1":"1 Main","city":"Medellín","country":"CO"},
+  "items":[{"productId":"aaaaaaaa-0000-0000-0000-000000000001","quantity":1}],
+  "payment":{"cardNumber":"4111111111111111"}}'
 ```
 
 ## Design highlights
@@ -119,9 +126,10 @@ Full rationale in [`PRD.md`](./PRD.md). The parts worth calling out:
   transaction; the payment call happens *outside* it (so locks aren't held across network I/O); a
   decline compensates by restoring stock.
 - **Idempotency** via an insert-first `Idempotency-Key` claim with store-and-replay.
-- **Ports & adapters.** The use-case depends on interfaces (`PaymentGateway`, repositories);
-  Prisma/mock implementations are wired in `composition-root.ts`. Swapping the payment provider is a
-  one-line change.
+- **Ports & adapters.** The use-case depends on interfaces (`PaymentGateway`, `Geocoder`,
+  repositories) wired in `composition-root.ts`; it has no Prisma, HTTP, or provider imports.
+- **Geocoding.** Shipping coordinates are taken from the request when present; otherwise the address
+  is geocoded behind the `Geocoder` port.
 - **Money** is integer minor units (cents), computed server-side from the product catalogue.
 
 ## Layout
@@ -130,7 +138,7 @@ Full rationale in [`PRD.md`](./PRD.md). The parts worth calling out:
 src/
   domain/          pure business logic + errors (distance, order errors)
   application/     use-cases (CreateOrder) + ports (interfaces)
-  infrastructure/  adapters: Prisma repositories, mock payment gateway
+  infrastructure/  adapters: Prisma repositories, mock payment gateway, mock geocoder
   http/            Fastify server, routes, controller, error mapping
   composition-root.ts   wires the object graph
 prisma/            schema, migrations, seed

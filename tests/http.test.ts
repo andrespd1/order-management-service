@@ -5,6 +5,7 @@ import { CreateOrder } from "../src/application/create-order.js";
 import { OrderController } from "../src/http/controllers/order-controller.js";
 import {
   FakeCustomerRepository,
+  FakeGeocoder,
   FakeIdempotencyStore,
   FakeOrderRepository,
   FakePaymentGateway,
@@ -31,6 +32,7 @@ async function setup(opts: { approve?: boolean; customerExists?: boolean } = {})
   const customers =
     opts.customerExists === false ? new FakeCustomerRepository(new Set()) : new FakeCustomerRepository();
   const useCase = new CreateOrder({
+    geocoder: new FakeGeocoder(),
     customers,
     products: new FakeProductRepository({ [MOUSE]: 1999 }),
     warehouses: new FakeWarehouseRepository([{ id: "w1", latitude: 0, longitude: 0 }]),
@@ -63,12 +65,25 @@ describe("POST /orders", () => {
     expect(orders.reserved).toHaveLength(0); // rejected before any reservation
   });
 
-  it("400 when shipping coordinates are missing", async () => {
+  it("201 and geocodes when shipping coordinates are omitted", async () => {
     await setup();
     const res = await app.inject({
       method: "POST",
       url: "/orders",
       payload: { ...validBody, shippingAddress: { line1: "1 Main", city: "Bogotá", country: "CO" } },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("400 when only one of latitude/longitude is provided", async () => {
+    await setup();
+    const res = await app.inject({
+      method: "POST",
+      url: "/orders",
+      payload: {
+        ...validBody,
+        shippingAddress: { line1: "1 Main", city: "Bogotá", country: "CO", latitude: 4.7 },
+      },
     });
     expect(res.statusCode).toBe(400);
   });

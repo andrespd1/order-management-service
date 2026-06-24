@@ -36,7 +36,7 @@ failure handling, and clean data storage.
 - Auth / authn / authz.
 - CRUD APIs for customers, warehouses, products, inventory (assumed to exist / seeded).
 - Real payments — **mocked** behind an interface.
-- Server-side geocoding — coordinates arrive from the client (see §6.6).
+- Real geocoding — **mocked** behind a `Geocoder` port (see §6.6).
 - A UI.
 - Automated tests are optional. A thin layer of high-value tests covers the inventory
   decrement and the order use-case; exhaustive coverage is skipped.
@@ -67,8 +67,7 @@ failure handling, and clean data storage.
   "payment": { "cardNumber": "4111111111111111" }
 }
 ```
-- `latitude`/`longitude` are **required** and validated (the client resolves & confirms
-  them; see §6.6).
+- `latitude`/`longitude` are **optional** (sent as a pair); omitted → geocoded server-side (see §6.6).
 - `Idempotency-Key: <uuid>` header (see §6.5).
 
 **Success — `201 Created`**
@@ -90,7 +89,7 @@ failure handling, and clean data storage.
 
 | Status | When |
 |--------|------|
-| `400 Bad Request` | Malformed body, missing/invalid coordinates, unknown product id, non-positive quantity |
+| `400 Bad Request` | Malformed body, lone coordinate (lat/lng must be paired), unknown product or customer, non-positive quantity |
 | `402 Payment Required` | Payment API declined the charge |
 | `409 Conflict` | No single warehouse can fill the whole order (insufficient stock) |
 | `500` | Unexpected server error |
@@ -136,7 +135,7 @@ orders
   warehouse_id           uuid fk -> warehouses
   status                 order_status   -- PENDING | PAID | PAYMENT_FAILED | CANCELLED
   ship_line1, ship_city, ship_region, ship_postal_code, ship_country  text
-  ship_latitude          double precision   -- from the request (client-provided, validated)
+  ship_latitude          double precision   -- client-provided or geocoded (see §6.6)
   ship_longitude         double precision
   total_amount           integer
   currency               text default 'USD'
@@ -173,11 +172,12 @@ already **registered** (no customer-management API, per the brief).
 `POST /orders` follows a **reserve → charge → confirm** shape, with compensation on payment
 failure:
 
-1. Validate the body, including the required shipping coordinates.
+1. Validate the body (shipping coordinates optional, but lat/lng must be sent as a pair).
 2. Idempotency: if the `Idempotency-Key` was already seen, return the stored response.
 3. Load products and prices; compute the line items and total amount.
-4. Select a warehouse: candidates stock every item in sufficient quantity; pick the one
-   nearest the shipping coordinates (Haversine). None → `409`.
+4. Resolve the destination coordinates (client-supplied, or geocode the address when omitted),
+   then select a warehouse: candidates stock every item in sufficient quantity; pick the one
+   nearest those coordinates (Haversine). None → `409`.
 5. In one transaction: atomically decrement the chosen warehouse's stock for each item and
    create the order as `PENDING`. A decrement that loses the race rolls the whole
    transaction back (retry selection once, else `409`). No external I/O inside the transaction.
@@ -194,13 +194,14 @@ sequenceDiagram
     participant Pay as Payment API (mock)
 
     C->>API: POST /orders + Idempotency-Key
-    API->>API: Validate body and required coordinates
+    API->>API: Validate body (coordinates optional)
     API->>DB: Look up Idempotency-Key
     alt Key already seen
         DB-->>API: Stored response
         API-->>C: Replay saved response (no re-charge)
     else New request
         API->>DB: Load products and prices, compute total
+        API->>API: Resolve coordinates (client's, else geocode the address)
         API->>DB: Find warehouses with ALL items in stock
         alt No single warehouse fits
             API-->>C: 409 Conflict (cannot fulfill)
@@ -294,18 +295,16 @@ request stores key + response; retries with the same key return the stored respo
 re-processing. The same key is forwarded to the payment mock so the charge is idempotent too.
 In scope for the initial build.
 
-### 6.6 Address coordinates as a validated input
-This service treats `latitude`/`longitude` as a required, validated **input** rather than
-geocoding addresses server-side.
+### 6.6 Address coordinates: client-supplied, geocoded when absent
+`latitude`/`longitude` are an **optional** input, sent as a pair (a lone value is rejected with a
+`400`). When supplied they are used directly; when omitted, the address is geocoded via a `Geocoder`
+port.
 
-In a real system the client resolves the address via autocomplete and the user **confirms the
-pin on a map**; those coordinates are authoritative and avoid silently selecting the wrong
-warehouse from an inaccurate server-side string→coordinate guess — an error that is costly to
-unwind downstream (wrong fulfillment, failed delivery). This matters most in regions where
-free-text addresses geocode poorly; whether that applies to Canals' markets is worth confirming.
-
-The brief allows mocking geocoding, so a server-side geocoder would only be a deliberate fallback,
-not something this flow relies on. (An inline comment marks this choice at the validation boundary.)
+Client-supplied coordinates are preferred: the client resolves the address (autocomplete, a
+confirmed map pin), so they are authoritative and avoid the wrong-warehouse selection an inaccurate
+string→coordinate guess can cause — costly to unwind downstream (wrong fulfillment, failed delivery),
+and most acute where free-text addresses geocode poorly. Server-side geocoding covers callers that
+have only an address.
 
 ---
 
@@ -317,7 +316,7 @@ not something this flow relies on. (An inline comment marks this choice at the v
 | HTTP framework | Fastify | Built-in JSON-schema validation + pino logging, less boilerplate |
 | DB | Postgres 16 (docker-compose) | Real transactions + row locking — needed for §6.1 |
 | DB access | Prisma + Prisma Migrate | Schema-first & readable; handles the atomic decrement via `updateMany`. `FOR UPDATE` (not needed here) would use `$queryRaw` |
-| Validation | Fastify schema / zod | required-coordinate checks live here |
+| Validation | Fastify JSON Schema (Ajv) | body validation + lat/lng pairing live here |
 | Config | env vars (dotenv) | |
 | Logging | pino (Fastify default) | structured logs |
 | Container | docker-compose for Postgres | one-command local bring-up |
@@ -354,8 +353,8 @@ README.md
 PRD.md
 ```
 
-The use-case (`create-order.ts`) depends only on the interfaces in `ports.ts`; the DB and
-payment adapters implement them, which keeps it easy to extend and trivial to swap the mock.
+The use-case (`create-order.ts`) depends only on the port interfaces; the DB, payment, and
+geocoder adapters implement them.
 
 ---
 
@@ -381,7 +380,6 @@ decline (402), and idempotent retry (same key → same response, no second charg
 - **Geospatial index** (PostGIS) when warehouse count grows (§6.3).
 - **Inventory reservations table** (with TTL) instead of in-place decrement, if stock must be
   held before payment with auto-expiry — the current approach reserves by decrementing.
-- **Optional server-side geocoding** as a fallback enrichment (§6.6).
 
 ---
 
@@ -407,4 +405,4 @@ monolith above gets the same correctness from one transaction and a single compe
 3. **Idempotency:** in scope for the initial build.
 4. **Customer modeling:** FK to seeded `customers`; the customer is assumed registered.
 5. **Product pricing:** products carry `price`; the server computes the charge amount.
-6. **Address coordinates:** client-provided & validated; no server-side geocoding (§6.6).
+6. **Address coordinates:** client-provided when available (preferred); geocoded via a mock `Geocoder` port when omitted (§6.6).

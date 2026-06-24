@@ -11,7 +11,7 @@ const bodySchema = {
     customerId: { type: "string", pattern: UUID },
     shippingAddress: {
       type: "object",
-      required: ["line1", "city", "country", "latitude", "longitude"],
+      required: ["line1", "city", "country"],
       additionalProperties: false,
       properties: {
         line1: { type: "string", minLength: 1 },
@@ -22,6 +22,8 @@ const bodySchema = {
         latitude: { type: "number", minimum: -90, maximum: 90 },
         longitude: { type: "number", minimum: -180, maximum: 180 },
       },
+      // Coordinates are optional (server geocodes when omitted) but must come as a pair.
+      dependencies: { latitude: ["longitude"], longitude: ["latitude"] },
     },
     items: {
       type: "array",
@@ -93,8 +95,9 @@ export function registerOrderRoutes(app: FastifyInstance, controller: OrderContr
         summary: "Create an order",
         description:
           "Reserves stock at the nearest warehouse that can fill the whole order, charges the " +
-          "(mocked) payment, and persists the order. Supply an Idempotency-Key header to make the " +
-          "call safe to retry.",
+          "(mocked) payment, and persists the order. Shipping coordinates are optional — when " +
+          "omitted, the address is geocoded server-side (mock provider). Supply an Idempotency-Key " +
+          "header to make the call safe to retry.",
         tags: ["orders"],
         headers: {
           type: "object",
@@ -106,7 +109,7 @@ export function registerOrderRoutes(app: FastifyInstance, controller: OrderContr
         body: bodySchema,
         response: {
           201: orderResponse,
-          400: errorResponse, // invalid body, dup/unknown product, unknown customer, missing coords
+          400: errorResponse, // invalid body, dup/unknown product, unknown customer, lone coordinate
           402: errorResponse, // payment declined
           409: errorResponse, // no single warehouse can fulfil
           422: errorResponse, // Idempotency-Key reused with a different payload
