@@ -1,10 +1,12 @@
 import {
+  CustomerNotFoundError,
   NoFulfillableWarehouseError,
   PaymentDeclinedError,
   ProductNotFoundError,
 } from "../domain/errors.js";
 import type { GeoPoint } from "../domain/distance.js";
 import { selectWarehouse } from "./select-warehouse.js";
+import type { CustomerRepository } from "./ports/customer-repository.js";
 import type { PaymentGateway } from "./ports/payment-gateway.js";
 import type { ProductRepository } from "./ports/product-repository.js";
 import type { RequestedItem, WarehouseRepository } from "./ports/warehouse-repository.js";
@@ -24,6 +26,7 @@ export interface CreateOrderCommand {
 }
 
 export interface CreateOrderDeps {
+  customers: CustomerRepository;
   products: ProductRepository;
   warehouses: WarehouseRepository;
   orders: OrderRepository;
@@ -35,7 +38,13 @@ export class CreateOrder {
   constructor(private readonly deps: CreateOrderDeps) {}
 
   async execute(command: CreateOrderCommand): Promise<Order> {
-    const { products, warehouses, orders, payments } = this.deps;
+    const { customers, products, warehouses, orders, payments } = this.deps;
+
+    // 0. Reject unknown customers up front; otherwise the FK trips deep in the insert and
+    //    surfaces as a 500 instead of a clean 4xx.
+    if (!(await customers.exists(command.customerId))) {
+      throw new CustomerNotFoundError(`Unknown customer: ${command.customerId}`);
+    }
 
     // 1. Price the order from the server's catalogue (never trust the client for money).
     const found = await products.findByIds(command.items.map((i) => i.productId));

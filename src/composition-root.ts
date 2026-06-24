@@ -1,4 +1,5 @@
 import { prisma } from "./infrastructure/db/client.js";
+import { PrismaCustomerRepository } from "./infrastructure/db/customer-repository.js";
 import { PrismaProductRepository } from "./infrastructure/db/product-repository.js";
 import { PrismaWarehouseRepository } from "./infrastructure/db/warehouse-repository.js";
 import { PrismaOrderRepository } from "./infrastructure/db/order-repository.js";
@@ -12,6 +13,7 @@ import type { Controllers } from "./http/server.js";
 // the shared Prisma client, adapters -> use-cases -> controllers. Add a feature by extending this map.
 export function buildControllers(): Controllers {
   const createOrder = new CreateOrder({
+    customers: new PrismaCustomerRepository(prisma),
     products: new PrismaProductRepository(prisma),
     warehouses: new PrismaWarehouseRepository(prisma),
     orders: new PrismaOrderRepository(prisma),

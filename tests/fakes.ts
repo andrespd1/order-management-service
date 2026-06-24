@@ -1,3 +1,4 @@
+import type { CustomerRepository } from "../src/application/ports/customer-repository.js";
 import type { ProductPrice, ProductRepository } from "../src/application/ports/product-repository.js";
 import type {
   RequestedItem,
@@ -11,6 +12,14 @@ import type {
 } from "../src/application/ports/order-repository.js";
 import type { ChargeInput, ChargeOutcome, PaymentGateway } from "../src/application/ports/payment-gateway.js";
 import type { IdempotencyOutcome, IdempotencyStore } from "../src/application/ports/idempotency-store.js";
+
+export class FakeCustomerRepository implements CustomerRepository {
+  // Defaults to "every customer exists"; pass a set of ids to restrict (e.g. to test 404s).
+  constructor(private readonly known?: Set<string>) {}
+  exists(id: string): Promise<boolean> {
+    return Promise.resolve(this.known ? this.known.has(id) : true);
+  }
+}
 
 export class FakeProductRepository implements ProductRepository {
   constructor(private readonly prices: Record<string, number>) {}

@@ -4,6 +4,7 @@ import { buildServer } from "../src/http/server.js";
 import { CreateOrder } from "../src/application/create-order.js";
 import { OrderController } from "../src/http/controllers/order-controller.js";
 import {
+  FakeCustomerRepository,
   FakeIdempotencyStore,
   FakeOrderRepository,
   FakePaymentGateway,
@@ -25,9 +26,12 @@ let orders: FakeOrderRepository;
 
 afterEach(() => app.close());
 
-async function setup(opts: { approve?: boolean } = {}): Promise<void> {
+async function setup(opts: { approve?: boolean; customerExists?: boolean } = {}): Promise<void> {
   orders = new FakeOrderRepository();
+  const customers =
+    opts.customerExists === false ? new FakeCustomerRepository(new Set()) : new FakeCustomerRepository();
   const useCase = new CreateOrder({
+    customers,
     products: new FakeProductRepository({ [MOUSE]: 1999 }),
     warehouses: new FakeWarehouseRepository([{ id: "w1", latitude: 0, longitude: 0 }]),
     orders,
@@ -49,6 +53,14 @@ describe("POST /orders", () => {
     const res = await app.inject({ method: "POST", url: "/orders", payload: validBody });
     expect(res.statusCode).toBe(402);
     expect(res.json().error.code).toBe("PAYMENT_DECLINED");
+  });
+
+  it("400 with CUSTOMER_NOT_FOUND for an unknown customer", async () => {
+    await setup({ customerExists: false });
+    const res = await app.inject({ method: "POST", url: "/orders", payload: validBody });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("CUSTOMER_NOT_FOUND");
+    expect(orders.reserved).toHaveLength(0); // rejected before any reservation
   });
 
   it("400 when shipping coordinates are missing", async () => {

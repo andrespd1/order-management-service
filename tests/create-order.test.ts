@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { CreateOrder, type CreateOrderCommand } from "../src/application/create-order.js";
 import {
+  CustomerNotFoundError,
   NoFulfillableWarehouseError,
   PaymentDeclinedError,
   ProductNotFoundError,
 } from "../src/domain/errors.js";
 import {
+  FakeCustomerRepository,
   FakeOrderRepository,
   FakePaymentGateway,
   FakeProductRepository,
@@ -28,6 +30,7 @@ describe("CreateOrder use-case", () => {
   it("creates a PAID order on the happy path, total computed server-side", async () => {
     const orders = new FakeOrderRepository();
     const useCase = new CreateOrder({
+      customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
       orders,
@@ -44,6 +47,7 @@ describe("CreateOrder use-case", () => {
   it("compensates (restores the reservation) when payment is declined", async () => {
     const orders = new FakeOrderRepository();
     const useCase = new CreateOrder({
+      customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
       orders,
@@ -57,6 +61,7 @@ describe("CreateOrder use-case", () => {
   it("retries after losing a stock race, then succeeds", async () => {
     const orders = new FakeOrderRepository(1); // first reserve loses the race, second wins
     const useCase = new CreateOrder({
+      customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
       orders,
@@ -71,6 +76,7 @@ describe("CreateOrder use-case", () => {
 
   it("throws NoFulfillableWarehouse when no warehouse can fill the order", async () => {
     const useCase = new CreateOrder({
+      customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({ [MOUSE]: 1999 }),
       warehouses: new FakeWarehouseRepository([]),
       orders: new FakeOrderRepository(),
@@ -82,6 +88,7 @@ describe("CreateOrder use-case", () => {
 
   it("throws ProductNotFound for an unknown product id", async () => {
     const useCase = new CreateOrder({
+      customers: new FakeCustomerRepository(),
       products: new FakeProductRepository({}),
       warehouses: new FakeWarehouseRepository([WAREHOUSE]),
       orders: new FakeOrderRepository(),
@@ -89,5 +96,19 @@ describe("CreateOrder use-case", () => {
     });
 
     await expect(useCase.execute(command())).rejects.toBeInstanceOf(ProductNotFoundError);
+  });
+
+  it("rejects an unknown customer up front, before reserving or charging", async () => {
+    const orders = new FakeOrderRepository();
+    const useCase = new CreateOrder({
+      customers: new FakeCustomerRepository(new Set()), // knows no customers
+      products: new FakeProductRepository({ [MOUSE]: 1999 }),
+      warehouses: new FakeWarehouseRepository([WAREHOUSE]),
+      orders,
+      payments: new FakePaymentGateway(true),
+    });
+
+    await expect(useCase.execute(command())).rejects.toBeInstanceOf(CustomerNotFoundError);
+    expect(orders.reserved).toEqual([]); // short-circuited: no stock reserved, nothing charged
   });
 });

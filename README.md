@@ -69,7 +69,7 @@ required, client-provided input (see [`PRD.md`](./PRD.md) §6.6).
 | Status | When |
 |--------|------|
 | `201` | Order created and paid |
-| `400` | Invalid body (missing coords, dup/blank product, quantity < 1, unknown product) |
+| `400` | Invalid body (missing coords, dup/blank product, quantity < 1, unknown product or customer) |
 | `402` | Payment declined |
 | `409` | No single warehouse can fill the order |
 | `422` | Idempotency-Key reused with a different payload |

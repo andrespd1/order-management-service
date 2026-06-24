@@ -1,5 +1,6 @@
 import type { FastifyError } from "fastify";
 import {
+  CustomerNotFoundError,
   IdempotencyConflictError,
   IdempotencyKeyMismatchError,
   NoFulfillableWarehouseError,
@@ -16,6 +17,9 @@ export function mapError(error: FastifyError): { status: number; code: string; m
   }
   if (error instanceof ProductNotFoundError) {
     return { status: 400, code: "PRODUCT_NOT_FOUND", message: error.message };
+  }
+  if (error instanceof CustomerNotFoundError) {
+    return { status: 400, code: "CUSTOMER_NOT_FOUND", message: error.message };
   }
   if (error instanceof NoFulfillableWarehouseError) {
     return { status: 409, code: "NO_FULFILLABLE_WAREHOUSE", message: error.message };

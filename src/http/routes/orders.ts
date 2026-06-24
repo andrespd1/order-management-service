@@ -106,7 +106,7 @@ export function registerOrderRoutes(app: FastifyInstance, controller: OrderContr
         body: bodySchema,
         response: {
           201: orderResponse,
-          400: errorResponse, // invalid body, dup/unknown product, missing coords
+          400: errorResponse, // invalid body, dup/unknown product, unknown customer, missing coords
           402: errorResponse, // payment declined
           409: errorResponse, // no single warehouse can fulfil
           422: errorResponse, // Idempotency-Key reused with a different payload

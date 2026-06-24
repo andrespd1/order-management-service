@@ -9,6 +9,9 @@ export class DomainError extends Error {
 // One or more requested product ids don't exist.
 export class ProductNotFoundError extends DomainError {}
 
+// The order references a customer that isn't registered.
+export class CustomerNotFoundError extends DomainError {}
+
 // No single warehouse can fill the whole order.
 export class NoFulfillableWarehouseError extends DomainError {}
 
